@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { encrypt } from "../utils/encryption";
 import { sendMail, renderMailHtml } from "../utils/mail/mail";
-import { CLIENT_HOST } from "../utils/env";
+import { CLIENT_HOST, EMAIL_SMTP_USER } from "../utils/env";
 
 export interface User {
     fullname: string;
@@ -25,12 +25,14 @@ const userSchema = new Schema<User>({
 
     username: {
         type: Schema.Types.String,
-        required: true
+        required: true,
+        unique: true
     },
 
     email: {
         type: Schema.Types.String,
-        required: true
+        required: true,
+        unique: true
     },
 
     password: {
@@ -64,30 +66,35 @@ const userSchema = new Schema<User>({
 userSchema.pre("save", function (next) {
     const user = this;
     user.password = encrypt(user.password);
+    user.activationCode = encrypt(user.id);
     next();
 })
 
 userSchema.post("save", async function(doc, next) {
-    const user = doc;
+    try {
+        const user = doc;
     
-    console.log("Send email to: ", user.email);
+        console.log("Send email to: ", user.email);
 
-    const contentMail = await renderMailHtml("registrationSuccess.ejs", {
-        username: user.username,
-        fullname: user.fullname,
-        email: user.email,
-        createdAt: user.createdAt,
-        activationLink: `${CLIENT_HOST}/auth/activation?code=${user.activationCode}`
-    })
+        const contentMail = await renderMailHtml("registrationSuccess.ejs", {
+            username: user.username,
+            fullname: user.fullname,
+            email: user.email,
+            createdAt: user.createdAt,
+            activationLink: `${CLIENT_HOST}/auth/activation?code=${user.activationCode}`
+        })
 
-    await sendMail({
-        from: "admin-acara@noreply.com",
-        to: user.email,
-        subject: "Aktivasi akun anda",
-        html: contentMail
-    })
-
-    next();
+        await sendMail({
+            from: EMAIL_SMTP_USER,
+            to: user.email,
+            subject: "Aktivasi akun anda",
+            html: contentMail
+        })
+    } catch(error) {
+        console.log("error > ", error)
+    } finally {
+        next();
+    }
 })
 
 userSchema.methods.toJSON = function () {
